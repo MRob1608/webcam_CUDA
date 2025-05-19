@@ -22,6 +22,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <time.h>
+
 #define FALSE 0
 #define TRUE  1
 
@@ -102,7 +104,9 @@ void camera_init(camera_t* camera) {
     }
   }
   printf("camera supports cropping\n");
-  
+
+
+  //imposto il format
   struct v4l2_format format;
   memset(&format, 0, sizeof format);
   format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -113,6 +117,24 @@ void camera_init(camera_t* camera) {
   if (xioctl(camera->fd, VIDIOC_S_FMT, &format) == -1) quit("VIDIOC_S_FMT");
   printf("set format to %d x %d\n", camera->width, camera->height);
 
+  //imposto il framerate
+  struct v4l2_streamparm parm;
+  memset(&parm, 0, sizeof(parm));
+  parm.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+  parm.parm.capture.timeperframe.numerator = 1;
+  parm.parm.capture.timeperframe.denominator = 10;  // 30 FPS
+
+  if (xioctl(camera->fd, VIDIOC_S_PARM, &parm) == -1)
+      quit("VIDIOC_S_PARM");
+  else
+      printf("Requested framerate: %.2f fps\n", 
+          (float)parm.parm.capture.timeperframe.denominator / parm.parm.capture.timeperframe.numerator);
+  printf("Actual FPS: %d/%d\n",
+       parm.parm.capture.timeperframe.denominator,
+       parm.parm.capture.timeperframe.numerator);
+
+
+  //alloco buffer in memoria kernel
   struct v4l2_requestbuffers req;
   memset(&req, 0, sizeof req);
   req.count = 4;
@@ -206,7 +228,7 @@ int camera_capture(camera_t* camera)
 }
 
 int camera_frame(camera_t* camera, struct timeval timeout) {
-  // waits fror a new frame, when camera ready
+  // waits for a new frame, when camera ready
   fd_set fds;
   FD_ZERO(&fds);
   FD_SET(camera->fd, &fds);
@@ -253,10 +275,13 @@ int main(int argc, char** argv)
     return -1;
   }
 
+  struct timespec start_time, end_time;
+  clock_gettime(CLOCK_MONOTONIC, &start_time);
+
   printf("capturing [ %05d ] frames\n", num_frames);
   struct timeval timeout;
-  timeout.tv_sec = 1;
-  timeout.tv_usec = 0;
+  timeout.tv_sec = 0;
+  timeout.tv_usec = 100000;
   char image_name[1024];
   for (int i = 0; i < num_frames; ++i) {
     if (camera_frame(camera, timeout)>0) {
@@ -266,6 +291,12 @@ int main(int argc, char** argv)
       savePGM(camera, image_name);
     }
   }
+  clock_gettime(CLOCK_MONOTONIC, &end_time); // dopo il ciclo
+
+  double elapsed_sec = end_time.tv_sec - start_time.tv_sec +
+                     (end_time.tv_nsec - start_time.tv_nsec) / 1e9;
+
+  printf("\nCaptured %d frames in %.2f seconds (%.2f FPS)\n", num_frames, elapsed_sec, num_frames / elapsed_sec);
   printf("\ndone!\n");
   camera_frame(camera, timeout);
 
