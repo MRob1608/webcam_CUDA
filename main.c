@@ -1,0 +1,83 @@
+#include "capture_camera.h"
+#include "interface.h"
+#include "conversion.h"
+
+#include <stdint.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
+
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <asm/types.h>
+#include <linux/videodev2.h>
+
+#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+#include <time.h>
+#include <X11/Xlib.h>
+
+extern Display* display;
+extern Window window;
+extern GC gc;
+
+
+int main(int argc, char** argv)
+{
+  if (argc != 3) {
+    printf("usage: <executable> <camera_device_name> <number_of_frames> - eg ./camera_capture /dev/video0 100\n");
+    return -1;
+  }
+
+  printf("opening camera device [ %s ]\n", argv[1]);
+  camera_t* camera = camera_open("/dev/video0", 640, 480);
+
+  init_x11(640,480);
+  camera_init(camera);
+  camera_start(camera);
+
+  const int num_frames = atoi(argv[2]);
+  if (num_frames < 0) {
+    printf("error, invalid number of frames - it must be positive :)\n");
+    printf("usage: <executable> <camera_device_name> <number_of_frames> - eg ./camera_capture /dev/video0 100\n");
+    return -1;
+  }
+
+  struct timespec start_time, end_time;
+  clock_gettime(CLOCK_MONOTONIC, &start_time);
+
+  printf("capturing [ %05d ] frames\n", num_frames);
+  struct timeval timeout;
+  timeout.tv_sec = 0;
+  timeout.tv_usec = 100000;
+  char image_name[1024];
+  char* rgb = (char*)malloc(camera->width * camera->height * 3);
+  for (int i = 0; i < num_frames; ++i) {
+    if (camera_frame(camera, timeout)>0) {
+      sprintf(image_name, "image-%05d.pgm", i);
+      printf("\racquiring frame [ %05d ]", i);
+      fflush(stdout);
+      yuyv_to_rgb24(camera->head.start,rgb,camera->width, camera->height);
+      display_frame(rgb,camera->width, camera->height);
+      //savePGM(camera, image_name);
+    }
+  }
+  clock_gettime(CLOCK_MONOTONIC, &end_time); // dopo il ciclo
+
+  double elapsed_sec = end_time.tv_sec - start_time.tv_sec +
+                     (end_time.tv_nsec - start_time.tv_nsec) / 1e9;
+
+  printf("\nCaptured %d frames in %.2f seconds (%.2f FPS)\n", num_frames, elapsed_sec, num_frames / elapsed_sec);
+  printf("\ndone!\n");
+  camera_frame(camera, timeout);
+
+  printf("closing\n");
+  camera_stop(camera);
+  camera_finish(camera);
+  camera_close(camera);
+  return 0;
+}
