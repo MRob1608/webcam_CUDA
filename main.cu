@@ -1,6 +1,9 @@
+extern "C" {
 #include "capture_camera.h"
 #include "interface.h"
 #include "conversion.h"
+}
+#include "conversion_CUDA.cuh"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -55,19 +58,27 @@ int main(int argc, char** argv)
   timeout.tv_sec = 0;
   timeout.tv_usec = 100000;
   char image_name[1024];
-  char* rgb = (char*)malloc(camera->width * camera->height * 3);
+  //char* rgb = (char*)malloc(camera->width * camera->height * 3);
   for (int i = 0; i < num_frames; ++i) {
     if (camera_frame(camera, timeout)>0) {
       sprintf(image_name, "image-%05d.pgm", i);
       printf("\racquiring frame [ %05d ]", i);
       fflush(stdout);
-      yuyv_to_rgb24(camera->head.start,rgb,camera->width, camera->height);
-      display_frame(rgb,camera->width, camera->height);
+      char* rgb =  (char*)malloc(camera->width * camera->height * 4);
+
+      int num_pixels = camera->width * camera->height;
+      int num_threads = 256;
+      int num_blocks = (num_pixels / 2 + num_threads - 1) / num_threads;
+
+      //yuyv_to_bgr_CUDA<<<num_blocks, num_threads>>>(camera->head.start, (unsigned char*)rgb, camera->height, camera->width);
+
+      yuyv_to_bgr(camera->head.start,(unsigned char*)rgb,camera->width, camera->height);
       //savePGM(camera, image_name);
+      display_frame((unsigned char*)rgb,camera->width, camera->height);
+      
     }
   }
   clock_gettime(CLOCK_MONOTONIC, &end_time); // dopo il ciclo
-
   double elapsed_sec = end_time.tv_sec - start_time.tv_sec +
                      (end_time.tv_nsec - start_time.tv_nsec) / 1e9;
 
