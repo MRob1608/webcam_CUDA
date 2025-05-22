@@ -8,6 +8,9 @@ find_package(X11 REQUIRED)
 # Imposta la directory di output
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
+set(CMAKE_CUDA_LINK_FLAGS "${CMAKE_CUDA_LINK_FLAGS} --no-warn")  #provvisorio
+
+
 # Aggiunge la directory 'include' come directory di ricerca per i file header
 include_directories(${X11_INCLUDE_DIR})
 include_directories(${CMAKE_SOURCE_DIR}/include)

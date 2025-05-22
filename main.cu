@@ -66,13 +66,15 @@ int main(int argc, char** argv)
       fflush(stdout);
       char* rgb =  (char*)malloc(camera->width * camera->height * 4);
 
-      int num_pixels = camera->width * camera->height;
-      int num_threads = 256;
-      int num_blocks = (num_pixels / 2 + num_threads - 1) / num_threads;
+      //int num_pixels = camera->width * camera->height;
+      //int num_threads = 256;
+      //int num_blocks = (num_pixels / 2 + num_threads - 1) / num_threads;
 
       //yuyv_to_bgr_CUDA<<<num_blocks, num_threads>>>(camera->head.start, (unsigned char*)rgb, camera->height, camera->width);
+      //mirror_image(camera->head.start, camera->height, camera->width);
 
       yuyv_to_bgr(camera->head.start,(unsigned char*)rgb,camera->width, camera->height);
+      mirror_image((unsigned char*)rgb, camera->height, camera->width);
       //savePGM(camera, image_name);
       display_frame((unsigned char*)rgb,camera->width, camera->height);
       

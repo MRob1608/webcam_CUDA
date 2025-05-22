@@ -68,3 +68,30 @@ __global__ void yuyv_to_bgr_CUDA(unsigned char *yuyv, unsigned char *rgb, int he
     rgb[8*tid + 6] = (unsigned char)r;
     rgb[8*tid + 7] = (unsigned char)0;
 }
+
+/*
+
+__global__ void swap(unsigned char* a, unsigned char * b) {
+    unsigned char tmp = *b;
+    *b = *a;
+    *a = tmp;
+}
+
+__global__ void mirror_image(unsigned char* rgb, int height, int width) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= width * height /2) return;
+    int bytes_per_line = width *4;
+    int offset = tid % width;
+    int num_line = (int) (tid / width);
+    for ( int i = 0; i < height; i++) {
+        int idx = i * bytes_per_line;
+        for (int j = 0; j < width*2; j+= 4) {
+            swap((unsigned char *)&rgb[idx+j], (unsigned char *)&rgb[idx+bytes_per_line-4-j]);
+            swap((unsigned char *)&rgb[idx+j+1], (unsigned char *)&rgb[idx+bytes_per_line-3-j]);
+            swap((unsigned char *)&rgb[idx+j+2], (unsigned char *)&rgb[idx+bytes_per_line-2-j]);
+            swap((unsigned char *)&rgb[idx+j+3], (unsigned char *)&rgb[idx+bytes_per_line-1-j]);
+        }
+    }
+}
+
+*/
