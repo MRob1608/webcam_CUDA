@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
-project(CUDA_webcam C)
+project(CUDA_webcam LANGUAGES C CUDA)
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xlinker --as-needed")
+
 
 find_package(X11 REQUIRED)
 
@@ -17,13 +19,27 @@ add_library(mylib STATIC
     interface.c
 )
 
+add_library(cudalib STATIC
+    conversion_CUDA.cu
+)
+
+set_target_properties(cudalib PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_STANDARD 11
+)
+
+target_include_directories(cudalib PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
 # Aggiunge l'eseguibile
-add_executable(main_exec main.c)
+add_executable(main_exec main.cu)
+
+
 
 # Collega la libreria all'eseguibile
-target_link_libraries(main_exec PRIVATE mylib X11::X11)
+target_link_libraries(main_exec PRIVATE mylib cudalib X11::X11)
 
 
 # Imposta la cartella include se hai header personalizzati
 target_include_directories(main_exec PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_include_directories(mylib PRIVATE ${CMAKE_SOURCE_DIR}/src)
+#target_include_directories(mylib PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
