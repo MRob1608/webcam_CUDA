@@ -4,6 +4,7 @@ extern "C" {
 #include "conversion.h"
 }
 #include "conversion_CUDA.cuh"
+#include "image_manipulation.cuh"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -27,6 +28,9 @@ extern "C" {
 extern Display* display;
 extern Window window;
 extern GC gc;
+
+int GPU = 1;
+int EDGE_DET = 1;
 
 
 int main(int argc, char** argv)
@@ -58,7 +62,14 @@ int main(int argc, char** argv)
   timeout.tv_sec = 0;
   timeout.tv_usec = 100000;
   char image_name[1024];
-  //char* rgb = (char*)malloc(camera->width * camera->height * 3);
+  
+  if (GPU) {
+    printf("Conversione YUYV in RGB con GPU\n"); fflush(stdout);
+  } else {
+    printf("Conversione YUYV in RGB con CPU\n"); fflush(stdout);
+  }
+
+
   for (int i = 0; i < num_frames; ++i) {
     if (camera_frame(camera, timeout)>0) {
       sprintf(image_name, "image-%05d.pgm", i);
@@ -66,14 +77,61 @@ int main(int argc, char** argv)
       fflush(stdout);
       char* rgb =  (char*)malloc(camera->width * camera->height * 4);
 
-      //int num_pixels = camera->width * camera->height;
-      //int num_threads = 256;
-      //int num_blocks = (num_pixels / 2 + num_threads - 1) / num_threads;
+      if (GPU) {
 
-      //yuyv_to_bgr_CUDA<<<num_blocks, num_threads>>>(camera->head.start, (unsigned char*)rgb, camera->height, camera->width);
-      //mirror_image(camera->head.start, camera->height, camera->width);
+        unsigned char *device_yuyv, *device_rgb;
 
-      yuyv_to_bgr(camera->head.start,(unsigned char*)rgb,camera->width, camera->height);
+        int num_pixels = camera->width * camera->height;
+        int num_threads = 256;
+        int num_blocks = (num_pixels / 2 + num_threads - 1) / num_threads;
+
+
+        cudaMalloc(&device_yuyv, camera->width * camera->height * 2);
+        cudaMalloc(&device_rgb, camera->width * camera->height * 4);
+        cudaMemcpy(device_yuyv, camera->head.start, camera->width * camera->height * 2, cudaMemcpyHostToDevice);
+
+        yuyv_to_bgr_CUDA<<<num_blocks, num_threads>>>(device_yuyv, device_rgb, camera->height, camera->width);
+
+        cudaMemcpy((unsigned char*)rgb, device_rgb, camera->width * camera->height * 4, cudaMemcpyDeviceToHost);
+        cudaFree(device_rgb);
+        cudaFree(device_yuyv);
+
+      } else {
+        yuyv_to_bgr(camera->head.start,(unsigned char*)rgb,camera->width, camera->height);
+      }
+
+
+      if (EDGE_DET) {
+        unsigned char* device_rgb, *device_gray, *device_output;
+
+        cudaMalloc(&device_rgb, camera->width * camera->height * 4);
+        cudaMalloc(&device_gray, camera->width * camera->height);
+        cudaMemcpy(device_rgb, (unsigned char *)rgb, camera->width * camera->height * 4, cudaMemcpyHostToDevice);
+
+        int num_pixels = camera->width * camera->height;
+        int num_threads = 256;
+        int num_blocks = (num_pixels + num_threads - 1) / num_threads;
+        
+        gray_scale_conversion<<<num_blocks, num_threads>>>(device_rgb, device_gray, camera->width, camera->height);
+
+        dim3 blockSize(16, 16);  // 256 thread per blocco
+        dim3 gridSize(
+            (camera->width + blockSize.x - 1) / blockSize.x,   // ceil(width / 16)
+            (camera->height + blockSize.y - 1) / blockSize.y   // ceil(height / 16)
+        );
+
+        cudaMalloc(&device_output, camera->width * camera->height * 4);
+
+        edge_detection_overlay<<<gridSize, blockSize>>>(device_rgb, device_output, device_gray, camera->width, camera->height);
+
+        cudaMemcpy((unsigned char*)rgb, device_output, camera->width * camera->height * 4, cudaMemcpyDeviceToHost);
+
+        cudaFree(device_rgb);
+        cudaFree(device_gray);
+        cudaFree(device_output);
+      }
+
+      
       mirror_image((unsigned char*)rgb, camera->height, camera->width);
       //savePGM(camera, image_name);
       display_frame((unsigned char*)rgb,camera->width, camera->height);
