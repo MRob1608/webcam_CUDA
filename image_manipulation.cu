@@ -27,7 +27,7 @@ __global__ void edge_detection_overlay(unsigned char* rgb, unsigned char* output
         return;
 
     float Gx = 0.0f, Gy = 0.0f;
-    int thold = 40;
+    int thold = 50;
 
     const int sobel_x[3][3] = {
         {-1, 0, 1},
@@ -44,10 +44,7 @@ __global__ void edge_detection_overlay(unsigned char* rgb, unsigned char* output
         for (int i = -1; i <= 1; ++i) {
             int ni = x + i;
             int nj = y + j;
-            int index = idx(ni, nj, width);
-
             float gray = grayscale[nj * width + ni];
-
 
             Gx += gray * sobel_x[j+1][i+1];
             Gy += gray * sobel_y[j+1][i+1];
