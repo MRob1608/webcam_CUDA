@@ -41,7 +41,7 @@ int main(int argc, char** argv)
   }
 
   printf("opening camera device [ %s ]\n", argv[1]);
-  camera_t* camera = camera_open("/dev/video0", 640, 480);
+  camera_t* camera = camera_open("/dev/video0", 640, 480);  //640 480
 
   init_x11(640,480);
   camera_init(camera);
