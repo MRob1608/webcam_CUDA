@@ -48,12 +48,16 @@ void display_frame(unsigned char* rgb_data, int width, int height) {
     }
     int depth = DefaultDepth(display, DefaultScreen(display));
 
+    unsigned char* rgb_copy = malloc(height * width * 4);
+    memcpy(rgb_copy, rgb_data, height * width * 4);
+
+
     ximage = XCreateImage(display,
                           DefaultVisual(display, 0),
                           24,                 // depth (bit per pixel)
                           ZPixmap,
                           0,
-                          (char*)rgb_data,
+                          (char*)rgb_copy,
                           width,
                           height,
                           8,                  // bitmap_pad in bit
@@ -61,6 +65,7 @@ void display_frame(unsigned char* rgb_data, int width, int height) {
     if (!ximage) {
         fprintf(stderr, "XCreateImage failed! width=%d height=%d depth=%d bytes_per_line=%d\n",
                 width, height, depth, bytes_per_line);
+        free(rgb_copy);
         return;
     }
     XPutImage(display, window, gc, ximage, 0, 0, 0, 0, width, height);

@@ -30,7 +30,143 @@ extern Window window;
 extern GC gc;
 
 int GPU = 1;
-int EDGE_DET = 1;
+int EDGE_DET = 0;
+int OPTICAL = 1;
+
+unsigned char* device_rgb, *device_gray, *device_output, *device_yuyv;
+
+unsigned char* device_prev_rgb, *device_prev_gray;
+
+float* d_Ix, *d_It, *d_Iy, *d_u, *d_v, *d_u_avg, *d_v_avg, *mag;
+
+
+void draw_square(
+    unsigned char* image,
+    int width, int height,
+    int center_x, int center_y,
+    int size
+) {
+    int half = size / 2;
+    for (int y = -half; y <= half; y++) {
+        for (int x = -half; x <= half; x++) {
+            int px = center_x + x;
+            int py = center_y + y;
+            if (px >= 0 && px < width && py >= 0 && py < height && ((x == -half or x ==half) || (y == -half or y ==half))) {
+                int idx = (py * width + px) * 4; // BGRA
+                image[idx + 0] = 0;   // B
+                image[idx + 1] = 255; // G
+                image[idx + 2] = 0;   // R
+                image[idx + 3] = 0; // A
+            }
+        }
+    }
+}
+
+void convert_yuyv_to_bgra(camera_t* camera, char* rgb, int use_gpu) { 
+  if (use_gpu) {
+
+
+        int num_pixels = camera->width * camera->height;
+        int num_threads = 256;
+        int num_blocks = (num_pixels / 2 + num_threads - 1) / num_threads;
+
+        cudaMemcpy(device_yuyv, camera->head.start, camera->width * camera->height * 2, cudaMemcpyHostToDevice);
+
+        yuyv_to_bgr_CUDA<<<num_blocks, num_threads>>>(device_yuyv, device_rgb, camera->height, camera->width);
+
+        cudaMemcpy(rgb, device_rgb, camera->width * camera->height * 4, cudaMemcpyDeviceToHost);
+
+      } else {
+        yuyv_to_bgr(camera->head.start,(unsigned char *)rgb,camera->width, camera->height);
+      }
+}
+
+void apply_edge_detection(char* rgb, int width, int height) {
+  cudaMemcpy(device_rgb, (unsigned char *)rgb, width * height * 4, cudaMemcpyHostToDevice);
+
+  int num_pixels = width * height;
+  int num_threads = 256;
+  int num_blocks = (num_pixels + num_threads - 1) / num_threads;
+        
+  gray_scale_conversion<<<num_blocks, num_threads>>>(device_rgb, device_gray, width, height);
+
+  dim3 blockSize(16, 16);  // 256 thread per blocco
+  dim3 gridSize(
+      (width + blockSize.x - 1) / blockSize.x,   // ceil(width / 16)
+      (height + blockSize.y - 1) / blockSize.y   // ceil(height / 16)
+  );
+
+
+  edge_detection_overlay<<<gridSize, blockSize>>>(device_rgb, device_output, device_gray, width, height);
+
+  cudaMemcpy((unsigned char*)rgb, device_output, width * height * 4, cudaMemcpyDeviceToHost);
+
+}
+
+
+void apply_optical_flow(char* rgb, char* prev_rgb, int width, int height) {
+
+  int num_pixels = width * height;
+  int num_threads = 256;
+  int num_blocks = (num_pixels + num_threads - 1) / num_threads;
+
+  cudaMemcpy(device_rgb, (unsigned char *)rgb, width * height * 4, cudaMemcpyHostToDevice);
+  gray_scale_conversion<<<num_blocks, num_threads>>>(device_rgb, device_gray, width, height);
+
+  cudaMemcpy(device_prev_rgb, (unsigned char *)prev_rgb, width * height * 4, cudaMemcpyHostToDevice);
+  gray_scale_conversion<<<num_blocks, num_threads>>>(device_prev_rgb, device_prev_gray, width, height);
+
+  dim3 block(16, 16);
+  dim3 grid((width + 15) / 16, (height + 15) / 16);
+
+  compute_derivatives<<<grid, block>>>(device_prev_gray, device_gray ,d_Ix, d_Iy, d_It,width, height);
+
+  size_t fsize = width * height * sizeof(float);
+
+  int num_iterations = 100;
+  float alpha = 15.0f;
+
+  for (int i = 0; i < num_iterations; i++) {
+      // 1. Calcola media locale
+      average_uv<<<grid, block>>>(
+          d_u, d_v,
+          d_u_avg, d_v_avg,
+          width, height
+      );
+
+            // 2. Aggiorna u, v
+            update_uv<<<grid, block>>>(
+                d_Ix, d_Iy, d_It,
+                d_u_avg, d_v_avg,
+                d_u, d_v,
+                alpha,
+                width, height
+            );
+        }
+
+        compute_flow_magnitude<<<grid, block>>>(d_u, d_v, mag, width, height);
+
+        float* h_mag = (float*)malloc(fsize);
+        cudaMemcpy(h_mag, mag, fsize, cudaMemcpyDeviceToHost);
+
+        int max_idx = 0;
+        float max_val = 0.0f;
+
+        for (int i = 0; i < width * height; i++) {
+            if (h_mag[i] > max_val) {
+                max_val = h_mag[i];
+                max_idx = i;
+            }
+        }
+
+        int max_x = max_idx % width;
+        int max_y = max_idx / width;
+
+        draw_square((unsigned char*)rgb, width, height, max_x, max_y, 50);
+        
+}
+
+
 
 
 int main(int argc, char** argv)
@@ -62,13 +198,47 @@ int main(int argc, char** argv)
   timeout.tv_sec = 0;
   timeout.tv_usec = 100000;
   char image_name[1024];
-  
-  if (GPU) {
-    printf("Conversione YUYV in RGB con GPU\n"); fflush(stdout);
-  } else {
-    printf("Conversione YUYV in RGB con CPU\n"); fflush(stdout);
+  char* prev_rgb =  (char*)malloc(camera->width * camera->height * 4);
+
+  //unsigned char *device_yuyv, *device_rgb;
+
+  if(GPU) {
+    cudaMalloc(&device_yuyv, camera->width * camera->height * 2);
+    cudaMalloc(&device_rgb, camera->width * camera->height * 4);
   }
 
+  if (EDGE_DET) {
+    if (!GPU) {
+      cudaMalloc(&device_rgb, camera->width * camera->height * 4);
+    }
+    cudaMalloc(&device_gray, camera->width * camera->height);
+    cudaMalloc(&device_output, camera->width * camera->height * 4);
+  }
+
+  if (OPTICAL) {
+    size_t derivative_size = camera->width * camera->height * sizeof(float);
+    size_t fsize = camera->width * camera->height * sizeof(float);
+
+    if (!GPU) {
+      cudaMalloc(&device_rgb, camera->width * camera->height * 4);
+    }
+    if (!EDGE_DET) {
+      cudaMalloc(&device_gray, camera->width * camera->height);
+    }
+
+    cudaMalloc(&device_prev_gray, camera->width * camera->height);
+    cudaMalloc(&device_prev_rgb, camera->width * camera->height);
+    cudaMalloc(&d_Ix, derivative_size);
+    cudaMalloc(&d_Iy, derivative_size);
+    cudaMalloc(&d_It, derivative_size);
+    cudaMalloc(&d_u, fsize);
+    cudaMalloc(&d_v, fsize);
+    cudaMemset(d_u, 0, fsize);  
+    cudaMemset(d_v, 0, fsize);
+    cudaMalloc(&d_u_avg, fsize);
+    cudaMalloc(&d_v_avg, fsize);
+    cudaMalloc(&mag,camera->width * camera->height * sizeof(float));
+  }
 
   for (int i = 0; i < num_frames; ++i) {
     if (camera_frame(camera, timeout)>0) {
@@ -76,66 +246,24 @@ int main(int argc, char** argv)
       printf("\racquiring frame [ %05d ]", i);
       fflush(stdout);
       char* rgb =  (char*)malloc(camera->width * camera->height * 4);
-
-      if (GPU) {
-
-        unsigned char *device_yuyv, *device_rgb;
-
-        int num_pixels = camera->width * camera->height;
-        int num_threads = 256;
-        int num_blocks = (num_pixels / 2 + num_threads - 1) / num_threads;
-
-
-        cudaMalloc(&device_yuyv, camera->width * camera->height * 2);
-        cudaMalloc(&device_rgb, camera->width * camera->height * 4);
-        cudaMemcpy(device_yuyv, camera->head.start, camera->width * camera->height * 2, cudaMemcpyHostToDevice);
-
-        yuyv_to_bgr_CUDA<<<num_blocks, num_threads>>>(device_yuyv, device_rgb, camera->height, camera->width);
-
-        cudaMemcpy((unsigned char*)rgb, device_rgb, camera->width * camera->height * 4, cudaMemcpyDeviceToHost);
-        cudaFree(device_rgb);
-        cudaFree(device_yuyv);
-
-      } else {
-        yuyv_to_bgr(camera->head.start,(unsigned char*)rgb,camera->width, camera->height);
-      }
+      
+      convert_yuyv_to_bgra(camera,rgb, GPU);
 
 
       if (EDGE_DET) {
-        unsigned char* device_rgb, *device_gray, *device_output;
+        apply_edge_detection(rgb, camera->width, camera->height);
+      }
 
-        cudaMalloc(&device_rgb, camera->width * camera->height * 4);
-        cudaMalloc(&device_gray, camera->width * camera->height);
-        cudaMemcpy(device_rgb, (unsigned char *)rgb, camera->width * camera->height * 4, cudaMemcpyHostToDevice);
-
-        int num_pixels = camera->width * camera->height;
-        int num_threads = 256;
-        int num_blocks = (num_pixels + num_threads - 1) / num_threads;
-        
-        gray_scale_conversion<<<num_blocks, num_threads>>>(device_rgb, device_gray, camera->width, camera->height);
-
-        dim3 blockSize(16, 16);  // 256 thread per blocco
-        dim3 gridSize(
-            (camera->width + blockSize.x - 1) / blockSize.x,   // ceil(width / 16)
-            (camera->height + blockSize.y - 1) / blockSize.y   // ceil(height / 16)
-        );
-
-        cudaMalloc(&device_output, camera->width * camera->height * 4);
-
-        edge_detection_overlay<<<gridSize, blockSize>>>(device_rgb, device_output, device_gray, camera->width, camera->height);
-
-        cudaMemcpy((unsigned char*)rgb, device_output, camera->width * camera->height * 4, cudaMemcpyDeviceToHost);
-
-        cudaFree(device_rgb);
-        cudaFree(device_gray);
-        cudaFree(device_output);
+      if (OPTICAL && prev_rgb != NULL) {
+        apply_optical_flow(rgb, prev_rgb, camera->width, camera->height);
       }
 
       
       mirror_image((unsigned char*)rgb, camera->height, camera->width);
       //savePGM(camera, image_name);
       display_frame((unsigned char*)rgb,camera->width, camera->height);
-      
+      memcpy(prev_rgb, rgb, camera->width * camera->height * 4);
+      free(rgb);
     }
   }
   clock_gettime(CLOCK_MONOTONIC, &end_time); // dopo il ciclo
@@ -145,6 +273,33 @@ int main(int argc, char** argv)
   printf("\nCaptured %d frames in %.2f seconds (%.2f FPS)\n", num_frames, elapsed_sec, num_frames / elapsed_sec);
   printf("\ndone!\n");
   camera_frame(camera, timeout);
+
+  if (GPU) {
+    cudaFree(device_rgb);
+    cudaFree(device_yuyv);
+  }
+  
+  if(EDGE_DET) {
+    cudaFree(device_rgb);
+    cudaFree(device_gray);
+    cudaFree(device_output);
+  }
+
+  if (OPTICAL) {
+    cudaFree(device_rgb);
+    cudaFree(device_prev_rgb);
+    cudaFree(device_gray);
+    cudaFree(device_prev_gray);
+    cudaFree(d_It);
+    cudaFree(d_Ix);
+    cudaFree(d_Iy);
+    cudaFree(d_u);
+    cudaFree(d_v);
+    cudaFree(d_u_avg);
+    cudaFree(d_v_avg);
+    cudaFree(mag);
+  } 
+
 
   printf("closing\n");
   camera_stop(camera);

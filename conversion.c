@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include "conversion.h"
 
+
 void swap(unsigned char* a, unsigned char * b) {
     unsigned char tmp = *b;
     *b = *a;
@@ -98,3 +99,5 @@ int yuyv_to_bgr(unsigned char *yuyv, unsigned char *rgb, int height, int width)
     }
     return 1;
 }
+
+
