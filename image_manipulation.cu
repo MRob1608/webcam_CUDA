@@ -7,6 +7,26 @@ __device__ int idx(int x, int y, int width) {
     return 4 * (y * width + x);
 }
 
+__global__ void blur_image(unsigned char* gray, unsigned char* blur, int width, int height) {
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x <= 0 || y <= 0 || x >= width - 1 || y >= height - 1)  //escludo i pixel ai bordi
+        return;
+
+    int pixel_idx = y * width + x;
+    int sum = 0;
+
+    for (int i = -1; i <= 1; i++) {
+        for (int j = -1; j <= 1; j++) {
+            int p_id = (y+j)*width + x + i;
+            sum += gray[p_id];        
+        }
+    }
+    sum /= 9;
+    blur[pixel_idx] = sum;
+}
+
 
 __global__ void gray_scale_conversion(unsigned char* rgb, unsigned char* gray, int width, int height) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;

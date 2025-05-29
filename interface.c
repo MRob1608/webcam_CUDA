@@ -20,25 +20,13 @@ void init_x11(int width, int height) {
     XMapWindow(display, window);
     gc = DefaultGC(display, screen);
 
+    Atom wm_delete_window = XInternAtom(display, "WM_DELETE_WINDOW", False);
+    XSetWMProtocols(display, window, &wm_delete_window, 1);
+
+    XSelectInput(display, window, ExposureMask | KeyPressMask | StructureNotifyMask);
+
     XFlush(display);
 }
-/*
-void display_frame(unsigned char* rgb_data, int width, int height) {
-    int bytes_per_pixel = 3;
-    int bytes_per_line = width * 3;
-    if (!ximage) {
-        ximage = XCreateImage(display, DefaultVisual(display, 0), 24,
-                              ZPixmap, 0, (char*)rgb_data, width, height, 32, 0);
-    } else {
-        ximage->data = (char*)rgb_data;
-    }
-
-    XPutImage(display, window, gc, ximage, 0, 0, 0, 0, width, height);
-    XFlush(display);
-    
-
-}
-*/
 
 void display_frame(unsigned char* rgb_data, int width, int height) {
     int bytes_per_pixel = 4;
