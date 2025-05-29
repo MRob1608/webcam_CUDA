@@ -15,3 +15,5 @@ __global__ void average_uv(const float* u_in, const float* v_in,float* u_avg, fl
 __global__ void update_uv(const float* Ix, const float* Iy, const float* It,const float* u_avg, const float* v_avg,float* u, float* v,float alpha,int width, int height);
 
 __global__ void compute_flow_magnitude(const float* u, const float* v,float* mag,int width, int height);
+
+__global__ void blur_image(unsigned char* gray, unsigned char* blur, int width, int height);

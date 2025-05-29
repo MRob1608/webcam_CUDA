@@ -24,18 +24,20 @@ extern "C" {
 
 #include <time.h>
 #include <X11/Xlib.h>
+#include <X11/Xatom.h>
 
 extern Display* display;
 extern Window window;
 extern GC gc;
+XEvent event;
 
 int GPU = 1;
 int EDGE_DET = 0;
 int OPTICAL = 1;
 
-unsigned char* device_rgb, *device_gray, *device_output, *device_yuyv;
+unsigned char* device_rgb, *device_gray, *device_output, *device_yuyv, *device_blur;
 
-unsigned char* device_prev_rgb, *device_prev_gray;
+unsigned char* device_prev_rgb, *device_prev_gray, *device_prev_blur;
 
 float* d_Ix, *d_It, *d_Iy, *d_u, *d_v, *d_u_avg, *d_v_avg, *mag;
 
@@ -106,6 +108,9 @@ void apply_edge_detection(char* rgb, int width, int height) {
 
 void apply_optical_flow(char* rgb, char* prev_rgb, int width, int height) {
 
+  dim3 block(16, 16);
+  dim3 grid((width + 15) / 16, (height + 15) / 16);
+
   int num_pixels = width * height;
   int num_threads = 256;
   int num_blocks = (num_pixels + num_threads - 1) / num_threads;
@@ -113,11 +118,12 @@ void apply_optical_flow(char* rgb, char* prev_rgb, int width, int height) {
   cudaMemcpy(device_rgb, (unsigned char *)rgb, width * height * 4, cudaMemcpyHostToDevice);
   gray_scale_conversion<<<num_blocks, num_threads>>>(device_rgb, device_gray, width, height);
 
+  //blur_image<<<grid, block>>>(device_gray, device_blur, width, height);
+
   cudaMemcpy(device_prev_rgb, (unsigned char *)prev_rgb, width * height * 4, cudaMemcpyHostToDevice);
   gray_scale_conversion<<<num_blocks, num_threads>>>(device_prev_rgb, device_prev_gray, width, height);
 
-  dim3 block(16, 16);
-  dim3 grid((width + 15) / 16, (height + 15) / 16);
+  //blur_image<<<grid, block>>>(device_prev_gray, device_prev_blur, width, height);
 
   compute_derivatives<<<grid, block>>>(device_prev_gray, device_gray ,d_Ix, d_Iy, d_It,width, height);
 
@@ -149,20 +155,52 @@ void apply_optical_flow(char* rgb, char* prev_rgb, int width, int height) {
         float* h_mag = (float*)malloc(fsize);
         cudaMemcpy(h_mag, mag, fsize, cudaMemcpyDeviceToHost);
 
-        int max_idx = 0;
-        float max_val = 0.0f;
+        float* h_u = (float*)malloc(fsize);
+        float* h_v = (float*)malloc(fsize);
+        cudaMemcpy(h_u, d_u, fsize, cudaMemcpyDeviceToHost);
+        cudaMemcpy(h_v, d_v, fsize, cudaMemcpyDeviceToHost);
 
-        for (int i = 0; i < width * height; i++) {
-            if (h_mag[i] > max_val) {
-                max_val = h_mag[i];
-                max_idx = i;
+        float best_magnitude = 0.0f;
+        int best_x = 0, best_y = 0;
+        int block_size = 32;
+
+        for (int by = 0; by < height; by += block_size) {
+            for (int bx = 0; bx < width; bx += block_size) {
+                float sum_u = 0.0f;
+                float sum_v = 0.0f;
+                int count = 0;
+
+                for (int y = 0; y < block_size; y++) {
+                    for (int x = 0; x < block_size; x++) {
+                        int px = bx + x;
+                        int py = by + y;
+                        if (px >= width || py >= height) continue;
+                        int idx = py * width + px;
+                        sum_u += h_u[idx];
+                        sum_v += h_v[idx];
+                        count++;
+                    }
+                }
+
+                if (count > 0) {
+                    float avg_u = sum_u / count;
+                    float avg_v = sum_v / count;
+                    float magnitude = sqrtf(avg_u * avg_u + avg_v * avg_v);
+                    if (magnitude > best_magnitude) {
+                        best_magnitude = magnitude;
+                        best_x = bx + block_size / 2;
+                        best_y = by + block_size / 2;
+                    }
+                }
             }
         }
 
-        int max_x = max_idx % width;
-        int max_y = max_idx / width;
+        free(h_u);
+        free(h_v);
 
-        draw_square((unsigned char*)rgb, width, height, max_x, max_y, 50);
+        int box_size = 16 + best_magnitude * 2; // minimo 16, massimo 48 se avg ≈ 1.0
+
+        draw_square((unsigned char*)rgb, width, height, best_x, best_y, box_size);
         
 }
 
@@ -171,8 +209,8 @@ void apply_optical_flow(char* rgb, char* prev_rgb, int width, int height) {
 
 int main(int argc, char** argv)
 {
-  if (argc != 3) {
-    printf("usage: <executable> <camera_device_name> <number_of_frames> - eg ./camera_capture /dev/video0 100\n");
+  if (argc != 2) {
+    printf("usage: <executable> <camera_device_name> - eg ./camera_capture /dev/video0\n");
     return -1;
   }
 
@@ -180,27 +218,20 @@ int main(int argc, char** argv)
   camera_t* camera = camera_open("/dev/video0", 640, 480);  //640 480
 
   init_x11(640,480);
+  Atom wm_delete_window = XInternAtom(display, "WM_DELETE_WINDOW", False);
+
   camera_init(camera);
   camera_start(camera);
 
-  const int num_frames = atoi(argv[2]);
-  if (num_frames < 0) {
-    printf("error, invalid number of frames - it must be positive :)\n");
-    printf("usage: <executable> <camera_device_name> <number_of_frames> - eg ./camera_capture /dev/video0 100\n");
-    return -1;
-  }
 
   struct timespec start_time, end_time;
   clock_gettime(CLOCK_MONOTONIC, &start_time);
 
-  printf("capturing [ %05d ] frames\n", num_frames);
   struct timeval timeout;
   timeout.tv_sec = 0;
   timeout.tv_usec = 100000;
   char image_name[1024];
   char* prev_rgb =  (char*)malloc(camera->width * camera->height * 4);
-
-  //unsigned char *device_yuyv, *device_rgb;
 
   if(GPU) {
     cudaMalloc(&device_yuyv, camera->width * camera->height * 2);
@@ -240,7 +271,25 @@ int main(int argc, char** argv)
     cudaMalloc(&mag,camera->width * camera->height * sizeof(float));
   }
 
-  for (int i = 0; i < num_frames; ++i) {
+  cudaMalloc(&device_blur, camera->width * camera->height);
+  cudaMalloc(&device_prev_blur, camera->width * camera->height);
+
+  int i = 0;
+
+  printf("cartes"); fflush(stdout);
+
+  while(1) {
+    while (XPending(display)) {
+        XNextEvent(display, &event);
+        if (event.type == ClientMessage) {
+            if ((Atom)event.xclient.data.l[0] == wm_delete_window) {
+                printf("\nFinestra chiusa\n");
+                goto exit_loop;
+            }
+        }
+    }
+
+
     if (camera_frame(camera, timeout)>0) {
       sprintf(image_name, "image-%05d.pgm", i);
       printf("\racquiring frame [ %05d ]", i);
@@ -265,13 +314,18 @@ int main(int argc, char** argv)
       memcpy(prev_rgb, rgb, camera->width * camera->height * 4);
       free(rgb);
     }
+    i++;
   }
+  exit_loop:
+  XDestroyWindow(display, window);
+  XCloseDisplay(display);
+
   clock_gettime(CLOCK_MONOTONIC, &end_time); // dopo il ciclo
   double elapsed_sec = end_time.tv_sec - start_time.tv_sec +
                      (end_time.tv_nsec - start_time.tv_nsec) / 1e9;
 
-  printf("\nCaptured %d frames in %.2f seconds (%.2f FPS)\n", num_frames, elapsed_sec, num_frames / elapsed_sec);
-  printf("\ndone!\n");
+  printf("Captured %d frames in %.2f seconds (%.2f FPS)\n", i, elapsed_sec, i / elapsed_sec);
+  printf("done!\n");
   camera_frame(camera, timeout);
 
   if (GPU) {
@@ -300,6 +354,10 @@ int main(int argc, char** argv)
     cudaFree(mag);
   } 
 
+  cudaFree(device_blur);
+  cudaFree(device_prev_blur);
+  
+
 
   printf("closing\n");
   camera_stop(camera);
@@ -307,3 +365,4 @@ int main(int argc, char** argv)
   camera_close(camera);
   return 0;
 }
+
