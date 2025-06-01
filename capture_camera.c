@@ -5,6 +5,9 @@
 /*
  * capturing from UVC cam
  */
+
+
+
 #include "capture_camera.h"
 
 #include <stdint.h>
@@ -47,14 +50,12 @@ int xioctl(int fd, int request, void* arg)
   Opens the camera device and stores the requested image size in the camera struct
 */
 
-camera_t* camera_open(const char * device, uint32_t width, uint32_t height)
+camera_t* camera_open(const char * device)
 {
   int fd = open(device, O_RDWR | O_NONBLOCK, 0);
   if (fd == -1) quit("open");
   camera_t* camera = malloc(sizeof (camera_t));
   camera->fd = fd;
-  camera->width = width;
-  camera->height = height;
   camera->buffer_count = 0;
   camera->buffers = NULL;
   camera->head.length = 0;
@@ -63,6 +64,74 @@ camera_t* camera_open(const char * device, uint32_t width, uint32_t height)
   return camera;
 }
 
+int select_camera_format(camera_t* camera) {
+    struct v4l2_fmtdesc fmt = {0};
+    fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+
+    int option_count = 0;
+    int selected_index = -1;
+
+    struct {
+        int width;
+        int height;
+        int fps;
+    } options[100]; 
+
+    printf("Formati supportati dalla webcam (solo YUYV):\n");
+
+    while (ioctl(camera->fd, VIDIOC_ENUM_FMT, &fmt) == 0) {
+        if (fmt.pixelformat == V4L2_PIX_FMT_YUYV) {
+            struct v4l2_frmsizeenum frmsize = {0};
+            frmsize.pixel_format = fmt.pixelformat;
+
+            while (ioctl(camera->fd, VIDIOC_ENUM_FRAMESIZES, &frmsize) == 0) {
+                if (frmsize.type == V4L2_FRMSIZE_TYPE_DISCRETE) {
+                    int w = frmsize.discrete.width;
+                    int h = frmsize.discrete.height;
+
+                    struct v4l2_frmivalenum frmival = {0};
+                    frmival.pixel_format = fmt.pixelformat;
+                    frmival.width = w;
+                    frmival.height = h;
+
+                    while (ioctl(camera->fd, VIDIOC_ENUM_FRAMEINTERVALS, &frmival) == 0) {
+                        if (frmival.type == V4L2_FRMIVAL_TYPE_DISCRETE) {
+                            int fps = frmival.discrete.denominator / frmival.discrete.numerator;
+                            printf("%2d) %dx%d @ %d fps\n", option_count, w, h, fps);
+                            options[option_count].width = w;
+                            options[option_count].height = h;
+                            options[option_count].fps = fps;
+                            option_count++;
+                        }
+                        frmival.index++;
+                    }
+                }
+                frmsize.index++;
+            }
+        }
+        fmt.index++;
+    }
+
+    if (option_count == 0) {
+        fprintf(stderr, "Nessun formato YUYV disponibile.\n");
+        return -1;
+    }
+
+    printf("Seleziona il formato desiderato (0-%d): ", option_count - 1);
+    scanf("%d", &selected_index);
+
+    if (selected_index < 0 || selected_index >= option_count) {
+        fprintf(stderr, "Indice non valido.\n");
+        return -1;
+    }
+
+    camera->width = options[selected_index].width;
+    camera->height = options[selected_index].height;
+
+    return options[selected_index].fps;
+}
+
+
 
 /*
   1. queries the capability of he camera
@@ -70,7 +139,7 @@ camera_t* camera_open(const char * device, uint32_t width, uint32_t height)
   3. allocates memory buffers for dma operation
   4. sets up mmap with the requested buffers
 */
-void camera_init(camera_t* camera) {
+void camera_init(camera_t* camera, int fps) {
   struct v4l2_capability cap;
   if (xioctl(camera->fd, VIDIOC_QUERYCAP, &cap) == -1) quit("VIDIOC_QUERYCAP");
   if (!(cap.capabilities & V4L2_CAP_VIDEO_CAPTURE)) quit("no capture");
@@ -107,7 +176,7 @@ void camera_init(camera_t* camera) {
   memset(&parm, 0, sizeof(parm));
   parm.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
   parm.parm.capture.timeperframe.numerator = 1;
-  parm.parm.capture.timeperframe.denominator = 30;  // Number of FPS
+  parm.parm.capture.timeperframe.denominator = fps;  // Number of FPS
 
   if (xioctl(camera->fd, VIDIOC_S_PARM, &parm) == -1)
       quit("VIDIOC_S_PARM");

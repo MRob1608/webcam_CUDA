@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include "image_manipulation.cuh"
+
 
 __device__ int idx(int x, int y, int width) {
     return 4 * (y * width + x);
@@ -90,6 +90,28 @@ __global__ void edge_detection_overlay(unsigned char* rgb, unsigned char* output
     }
 }
 
+void draw_square(
+    unsigned char* image,
+    int width, int height,
+    int center_x, int center_y,
+    int size
+) {
+    int half = size / 2;
+    for (int y = -half; y <= half; y++) {
+        for (int x = -half; x <= half; x++) {
+            int px = center_x + x;
+            int py = center_y + y;
+            if (px >= 0 && px < width && py >= 0 && py < height && ((x == -half or x ==half) || (y == -half or y ==half))) {
+                int idx = (py * width + px) * 4; // BGRA
+                image[idx + 0] = 0;   // B
+                image[idx + 1] = 255; // G
+                image[idx + 2] = 0;   // R
+                image[idx + 3] = 0; // A
+            }
+        }
+    }
+}
+
 
 __global__ void compute_derivatives(
     const unsigned char* prev_gray,
@@ -100,7 +122,6 @@ __global__ void compute_derivatives(
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-    // Evita i bordi
     if (x < 1 || x >= width - 1 || y < 1 || y >= height - 1)
         return;
 
@@ -134,7 +155,7 @@ __global__ void average_uv(
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-    // Evita i bordi
+    
     if (x < 1 || x >= width - 1 || y < 1 || y >= height - 1)
         return;
 
@@ -159,7 +180,7 @@ __global__ void update_uv(
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-    // Evita i bordi
+    
     if (x < 1 || x >= width - 1 || y < 1 || y >= height - 1)
         return;
 

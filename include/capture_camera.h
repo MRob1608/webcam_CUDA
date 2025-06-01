@@ -2,6 +2,13 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#ifndef CAPTURE_CAMERA_H
+#define CAPTURE_CAMERA_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct {
   uint8_t* start;
   size_t length;
@@ -24,7 +31,9 @@ int xioctl(int fd, int request, void* arg);
 /*
   Opens the camera device and stores the requested image size in the camera struct
 */
-camera_t* camera_open(const char * device, uint32_t width, uint32_t height);
+camera_t* camera_open(const char * device);
+
+int select_camera_format(camera_t* camera);
 
 /*
   1. queries the capability of he camera
@@ -32,7 +41,7 @@ camera_t* camera_open(const char * device, uint32_t width, uint32_t height);
   3. allocates memory buffers for dma operation
   4. sets up mmap with the requested buffers
 */
-void camera_init(camera_t* camera);
+void camera_init(camera_t* camera, int fps);
 
 // starts the streaming
 void camera_start(camera_t* camera);
@@ -52,3 +61,9 @@ int camera_capture(camera_t* camera);
 int camera_frame(camera_t* camera, struct timeval timeout);
 
 void savePGM(camera_t* camera, char* filename);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // CAPTURE_CAMERA_H

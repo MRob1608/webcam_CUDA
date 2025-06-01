@@ -1,6 +1,9 @@
+#pragma once
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include "capture_camera.h"
+
 
 __device__ int idx(int x, int y, int width);
 
@@ -17,3 +20,5 @@ __global__ void update_uv(const float* Ix, const float* Iy, const float* It,cons
 __global__ void compute_flow_magnitude(const float* u, const float* v,float* mag,int width, int height);
 
 __global__ void blur_image(unsigned char* gray, unsigned char* blur, int width, int height);
+
+void draw_square(unsigned char* image, int width, int height, int center_x, int center_y,int size);
