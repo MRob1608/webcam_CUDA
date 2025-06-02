@@ -69,12 +69,16 @@ void apply_optical_flow(char* rgb, char* prev_rgb, int width, int height) {
 
   //blur_image<<<grid, block>>>(device_gray, device_blur, width, height);
 
+  gaussian_blur3<<<grid, block>>>(device_gray, device_blur, width, height);
+
   cudaMemcpy(device_prev_rgb, (unsigned char *)prev_rgb, width * height * 4, cudaMemcpyHostToDevice);
   gray_scale_conversion<<<num_blocks, num_threads>>>(device_prev_rgb, device_prev_gray, width, height);
 
   //blur_image<<<grid, block>>>(device_prev_gray, device_prev_blur, width, height);
 
-  compute_derivatives<<<grid, block>>>(device_prev_gray, device_gray ,d_Ix, d_Iy, d_It,width, height);
+  gaussian_blur3<<<grid, block>>>(device_prev_gray, device_prev_blur, width, height);
+
+  compute_derivatives<<<grid, block>>>(device_prev_blur, device_blur ,d_Ix, d_Iy, d_It, width, height);
 
   size_t fsize = width * height * sizeof(float);
 

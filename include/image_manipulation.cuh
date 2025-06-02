@@ -21,6 +21,8 @@ __global__ void compute_flow_magnitude(const float* u, const float* v,float* mag
 
 __global__ void blur_image(unsigned char* gray, unsigned char* blur, int width, int height);
 
+__global__ void gaussian_blur3(unsigned char* gray, unsigned char* blur, int width, int height);
+
 void draw_square(unsigned char* image, int width, int height, int center_x, int center_y,int size);
 
 __global__ void scale_image_cn_kernel(const unsigned char* input, int src_width, int src_height, unsigned char* output, int dst_width, int dst_height);

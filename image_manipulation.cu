@@ -27,6 +27,28 @@ __global__ void blur_image(unsigned char* gray, unsigned char* blur, int width, 
     blur[pixel_idx] = sum;
 }
 
+__global__ void gaussian_blur3(unsigned char* gray, unsigned char* blur, int width, int height) {
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x < 0 || y < 0 || x >= width  || y >= height )  
+        return;
+
+    int pixel_idx = y * width + x;
+
+    const int blr[3][3] = {
+        {1, 2, 1},
+        {2, 4, 2},
+        {1, 2, 1}
+    };
+    int sum = 0;
+    int den = 0;
+
+    
+    blur[pixel_idx] = sum / den;
+
+}
+
 
 __global__ void gray_scale_conversion(unsigned char* rgb, unsigned char* gray, int width, int height) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -146,6 +168,7 @@ __global__ void compute_derivatives(
     // Derivata temporale
     It[idx] = (float)(curr_gray[idx]) - (float)(prev_gray[idx]);
 }
+
 
 __global__ void average_uv(
     const float* u_in, const float* v_in,
@@ -293,7 +316,7 @@ __global__ void image_sharpen(unsigned char* input, unsigned char* output, int w
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (x <= 0 || y <= 0 || x >= width - 1 || y >= height - 1)  
+    if (x < 0 || y < 0 || x >= width  || y >= height )  
         return;
 
     int pixel_idx = idx(x,y,width);
@@ -308,7 +331,9 @@ __global__ void image_sharpen(unsigned char* input, unsigned char* output, int w
         float sum = 0;
         for (int i = -1; i <= 1; i++) {
             for (int j = -1; j <= 1; j++) {
-                int id = idx(x+i, y+j, width);
+                int dx = fmaxf(0, fminf(x+i, width-1));
+                int dy = fmaxf(0, fminf(y+j, height-1));
+                int id = idx(dx, dy, width);
                 sum += shp[j+1][i+1] * input[id+c];
             }
         }
