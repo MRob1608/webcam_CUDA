@@ -28,10 +28,14 @@ extern "C" {
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 
+#define MAX_WIDTH  3840
+#define MAX_HEIGHT 2160
+
 extern Display* display;
 extern Window window;
 extern GC gc;
 XEvent event;
+XWindowAttributes attr;
 
 
 int main(int argc, char** argv)
@@ -71,10 +75,14 @@ int main(int argc, char** argv)
   if (EDGE_DET) alloc_Edge(camera);
 
   if (OPTICAL) alloc_Optical(camera);
+
+  cudaMalloc(&device_scaled_rgb, MAX_WIDTH * MAX_HEIGHT * 4);
+  cudaMalloc(&device_sharpened_rgb, MAX_WIDTH * MAX_HEIGHT * 4);
   
   int i = 0;
 
   while(1) {
+    
     while (XPending(display)) {
         XNextEvent(display, &event);
         if (event.type == ClientMessage) {
@@ -105,12 +113,35 @@ int main(int argc, char** argv)
 
       
       mirror_image((unsigned char*)rgb, camera->height, camera->width);
-      //savePGM(camera, image_name);
-      display_frame((unsigned char*)rgb,camera->width, camera->height);
-      memcpy(prev_rgb, rgb, camera->width * camera->height * 4);
-      free(rgb);
+
+      XGetWindowAttributes(display, window, &attr);
+      int window_width = attr.width;
+      int window_height = attr.height;
+
+      if (window_width == camera->width && window_height == camera->height) {
+        display_frame((unsigned char*)rgb,camera->width, camera->height);
+        memcpy(prev_rgb, rgb, camera->width * camera->height * 4);
+        free(rgb);
+      } else {
+
+        char* scaled_image = (char*)malloc(window_height * window_width * 4);
+
+        if (BILINEAR) {
+          scale_image_bilinear((unsigned char*)rgb, camera->width, camera->height,(unsigned char*) scaled_image, window_width, window_height);
+        } else {
+          scale_image_cn((unsigned char*)rgb, camera->width, camera->height,(unsigned char*) scaled_image, window_width, window_height);
+        }
+
+        display_frame((unsigned char*)scaled_image, window_width, window_height);
+        memcpy(prev_rgb, rgb, camera->width * camera->height * 4);
+        free(rgb);
+        free(scaled_image);
+      }
+
+      
     }
     i++;
+    
   }
   exit_loop:
   XDestroyWindow(display, window);
@@ -129,6 +160,8 @@ int main(int argc, char** argv)
   if(EDGE_DET) free_conversion();
 
   if (OPTICAL) free_Optical();
+
+  cudaFree(device_scaled_rgb);
 
   free(prev_rgb);
   printf("closing\n");

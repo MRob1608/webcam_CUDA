@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <X11/Xutil.h>
+#include <X11/Xatom.h>
+
 
 Display *display;
 Window window;
@@ -16,6 +18,9 @@ void init_x11(int width, int height) {
                                   10, 10, width, height, 1,
                                   BlackPixel(display, screen),
                                   WhitePixel(display, screen));
+
+    
+                                
 
     XMapWindow(display, window);
     gc = DefaultGC(display, screen);

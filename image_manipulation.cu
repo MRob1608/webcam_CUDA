@@ -202,11 +202,7 @@ __global__ void update_uv(
     }
 }
 
-__global__ void compute_flow_magnitude(
-    const float* u, const float* v,
-    float* mag,
-    int width, int height
-) {
+__global__ void compute_flow_magnitude(const float* u, const float* v, float* mag, int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -221,4 +217,106 @@ __global__ void compute_flow_magnitude(
     if (tmp_mag < thold) tmp_mag = 0;
     mag[idx] = tmp_mag;
 }
+
+
+__global__ void scale_image_cn_kernel(
+    const unsigned char* input,
+    int src_width, int src_height,
+    unsigned char* output,
+    int dst_width, int dst_height
+) {
+    int x_out = blockIdx.x * blockDim.x + threadIdx.x;
+    int y_out = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x_out >= dst_width || y_out >= dst_height) return;
+
+    int x_in = x_out * src_width / dst_width;
+    int y_in = y_out * src_height / dst_height;
+
+    int src_idx = (y_in * src_width + x_in) * 4;
+    int dst_idx = (y_out * dst_width + x_out) * 4;
+
+    output[dst_idx + 0] = input[src_idx + 0];  // B
+    output[dst_idx + 1] = input[src_idx + 1];  // G
+    output[dst_idx + 2] = input[src_idx + 2];  // R
+    output[dst_idx + 3] = input[src_idx + 3];  // A
+}
+
+__global__ void scale_image_bilinear_kernel(
+    unsigned char* input, unsigned char* output,
+    int in_width, int in_height,
+    int out_width, int out_height
+) {
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= out_width || y >= out_height) return;
+
+    float scale_x = (float)in_width / out_width;
+    float scale_y = (float)in_height / out_height;
+
+    float src_x = x * scale_x;
+    float src_y = y * scale_y;
+
+    int x0 = (int)floorf(src_x);
+    int y0 = (int)floorf(src_y);
+    int x1 = min(x0 + 1, in_width - 1);
+    int y1 = min(y0 + 1, in_height - 1);
+
+    float dx = src_x - x0;
+    float dy = src_y - y0;
+
+    
+    int idx_A = idx(x0,y0, in_width);
+    int idx_B = idx(x1,y0, in_width);
+    int idx_C = idx(x0,y1, in_width);
+    int idx_D = idx(x1,y1, in_width);
+
+    
+    int out_idx = idx(x,y,out_width);
+
+    for (int c = 0; c < 4; c++) {  
+        float A = input[idx_A + c];
+        float B = input[idx_B + c];
+        float C = input[idx_C + c];
+        float D = input[idx_D + c];
+
+        float top = A * (1.0f - dx) + B * dx;
+        float bottom = C * (1.0f - dx) + D * dx;
+        float value = top * (1.0f - dy) + bottom * dy;
+
+        output[out_idx + c] = (unsigned char)(value + 0.5f);
+    }
+}
+
+
+__global__ void image_sharpen(unsigned char* input, unsigned char* output, int width, int height) {
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x <= 0 || y <= 0 || x >= width - 1 || y >= height - 1)  
+        return;
+
+    int pixel_idx = idx(x,y,width);
+
+    const int shp[3][3] = {
+        {0, -1, 0},
+        {-1, 5,-1},
+        {0, -1, 0}
+    };
+
+    for (int c = 0; c < 3; c++) {
+        float sum = 0;
+        for (int i = -1; i <= 1; i++) {
+            for (int j = -1; j <= 1; j++) {
+                int id = idx(x+i, y+j, width);
+                sum += shp[j+1][i+1] * input[id+c];
+            }
+        }
+        output[pixel_idx+c] = (unsigned char)fminf(fmaxf(sum+0.5f, 0.0f), 255.0f);
+    }
+
+    output[pixel_idx+3] = input[pixel_idx+3];
+}
+
+
 

@@ -154,6 +154,33 @@ void apply_optical_flow(char* rgb, char* prev_rgb, int width, int height) {
         
 }
 
+void scale_image_cn(unsigned char* rgb, int base_width, int base_height,unsigned char* scaled_image ,int window_width, int window_height) {
+
+    cudaMemcpy(device_rgb, rgb, base_width * base_height * 4, cudaMemcpyHostToDevice);
+
+    dim3 blockSize(16, 16);
+    dim3 gridSize((window_width + 15) / 16, (window_height + 15) / 16);
+
+    scale_image_cn_kernel<<<gridSize, blockSize>>>(device_rgb, base_width, base_height ,device_scaled_rgb, window_width, window_height);
+
+    cudaMemcpy(scaled_image, device_scaled_rgb, window_height * window_width * 4, cudaMemcpyDeviceToHost);
+
+}
+
+void scale_image_bilinear(unsigned char* rgb, int base_width, int base_height,unsigned char* scaled_image ,int window_width, int window_height) {
+    cudaMemcpy(device_rgb, rgb, base_width * base_height * 4, cudaMemcpyHostToDevice);
+
+    dim3 blockSize(16, 16);
+    dim3 gridSize((window_width + 15) / 16, (window_height + 15) / 16);
+
+    scale_image_bilinear_kernel<<<gridSize, blockSize>>>(device_rgb, device_scaled_rgb, base_width, base_height, window_width, window_height);
+
+    image_sharpen<<<gridSize, blockSize>>>(device_scaled_rgb, device_sharpened_rgb, window_width, window_height);
+
+    cudaMemcpy(scaled_image, device_sharpened_rgb, window_height * window_width * 4, cudaMemcpyDeviceToHost);
+}
+
+
 void alloc_conversion(camera_t* camera) {
     cudaMalloc(&device_yuyv, camera->width * camera->height * 2);
     cudaMalloc(&device_rgb, camera->width * camera->height * 4);
@@ -163,7 +190,6 @@ void free_conversion(void) {
     cudaFree(device_rgb);
     cudaFree(device_yuyv);
 }
-
 
 void alloc_Edge(camera_t* camera) {
     if (!GPU) {
