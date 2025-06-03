@@ -44,6 +44,19 @@ __global__ void gaussian_blur3(unsigned char* gray, unsigned char* blur, int wid
     int sum = 0;
     int den = 0;
 
+    for (int i = -1; i <= 1; i++) {
+        for (int j = -1; j <= 1; j++) {
+            int xi = x + j;
+            int yi = y + i;
+
+            if (xi >= 0 && xi < width && yi >= 0 && yi < height) {
+                int weight = blr[i + 1][j + 1];
+                sum += weight * gray[yi * width + xi];
+                den += weight;
+            }
+        }
+    }
+
     
     blur[pixel_idx] = sum / den;
 
