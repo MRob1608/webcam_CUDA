@@ -7,8 +7,8 @@ extern int EDGE_DET;
 extern int OPTICAL;
 extern int BILINEAR;
 
-extern int width;
-extern int height;
+extern int prev_x;
+extern int prev_y;
 extern unsigned char* dev_rgb;
 extern unsigned char* dev_gray;
 extern unsigned char* device_rgb, *device_gray, *device_output, *device_yuyv, *device_blur, *device_sharpened_rgb;

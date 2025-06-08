@@ -67,14 +67,10 @@ void apply_optical_flow(char* rgb, char* prev_rgb, int width, int height) {
   cudaMemcpy(device_rgb, (unsigned char *)rgb, width * height * 4, cudaMemcpyHostToDevice);
   gray_scale_conversion<<<num_blocks, num_threads>>>(device_rgb, device_gray, width, height);
 
-  //blur_image<<<grid, block>>>(device_gray, device_blur, width, height);
-
   gaussian_blur3<<<grid, block>>>(device_gray, device_blur, width, height);
 
   cudaMemcpy(device_prev_rgb, (unsigned char *)prev_rgb, width * height * 4, cudaMemcpyHostToDevice);
   gray_scale_conversion<<<num_blocks, num_threads>>>(device_prev_rgb, device_prev_gray, width, height);
-
-  //blur_image<<<grid, block>>>(device_prev_gray, device_prev_blur, width, height);
 
   gaussian_blur3<<<grid, block>>>(device_prev_gray, device_prev_blur, width, height);
 
@@ -83,7 +79,7 @@ void apply_optical_flow(char* rgb, char* prev_rgb, int width, int height) {
   size_t fsize = width * height * sizeof(float);
 
   int num_iterations = 100;
-  float alpha = 15.0f;
+  float alpha = 10.0f;
 
   for (int i = 0; i < num_iterations; i++) {
       // 1. Calcola media locale
@@ -152,9 +148,22 @@ void apply_optical_flow(char* rgb, char* prev_rgb, int width, int height) {
         free(h_v);
         free(h_mag);
 
-        int box_size = 16 + best_magnitude * 2; 
+        if (best_magnitude < 20.0f) {
+            best_x = prev_x;
+            best_y = prev_y;
+        }
 
-        draw_square((unsigned char*)rgb, width, height, best_x, best_y, box_size);
+        int box_size = 16 + fminf(best_magnitude * 2, 200.0f); 
+
+        float square_alpha = 0.2f;
+
+        float filtered_x = square_alpha * best_x + (1.0f - square_alpha) * prev_x;
+        float filtered_y = square_alpha * best_y + (1.0f - square_alpha) * prev_y;
+
+        prev_x = filtered_x;
+        prev_y = filtered_y;
+
+        draw_square((unsigned char*)rgb, width, height, (int)filtered_x, (int)filtered_y, box_size);
         
 }
 
@@ -221,7 +230,7 @@ void alloc_Optical(camera_t* camera) {
     }
 
     cudaMalloc(&device_prev_gray, camera->width * camera->height);
-    cudaMalloc(&device_prev_rgb, camera->width * camera->height);
+    cudaMalloc(&device_prev_rgb, camera->width * camera->height *4);
     cudaMalloc(&d_Ix, derivative_size);
     cudaMalloc(&d_Iy, derivative_size);
     cudaMalloc(&d_It, derivative_size);
