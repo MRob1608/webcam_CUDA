@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "conversion_CUDA.cuh"
+#include "globals.h"
 
 
 
@@ -69,29 +70,35 @@ __global__ void yuyv_to_bgr_CUDA(unsigned char *yuyv, unsigned char *rgb, int he
     rgb[8*tid + 7] = (unsigned char)0;
 }
 
-/*
 
-__global__ void swap(unsigned char* a, unsigned char * b) {
-    unsigned char tmp = *b;
-    *b = *a;
-    *a = tmp;
+
+__global__ void mirror_image_kernel(unsigned char* rgb, unsigned char* mirrored_rgb, int width, int height) {
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x >= width || y >= height) return;
+
+    int src_idx = ((width * y) + x) * 4;
+    int dest_idx = ((width * y) + width - x - 1) * 4;
+
+
+    mirrored_rgb[dest_idx] = rgb[src_idx];
+    mirrored_rgb[dest_idx+1] = rgb[src_idx+1];
+    mirrored_rgb[dest_idx+2] = rgb[src_idx+2];
+    mirrored_rgb[dest_idx+3] = rgb[src_idx+3];
 }
 
-__global__ void mirror_image(unsigned char* rgb, int height, int width) {
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tid >= width * height /2) return;
-    int bytes_per_line = width *4;
-    int offset = tid % width;
-    int num_line = (int) (tid / width);
-    for ( int i = 0; i < height; i++) {
-        int idx = i * bytes_per_line;
-        for (int j = 0; j < width*2; j+= 4) {
-            swap((unsigned char *)&rgb[idx+j], (unsigned char *)&rgb[idx+bytes_per_line-4-j]);
-            swap((unsigned char *)&rgb[idx+j+1], (unsigned char *)&rgb[idx+bytes_per_line-3-j]);
-            swap((unsigned char *)&rgb[idx+j+2], (unsigned char *)&rgb[idx+bytes_per_line-2-j]);
-            swap((unsigned char *)&rgb[idx+j+3], (unsigned char *)&rgb[idx+bytes_per_line-1-j]);
-        }
-    }
-}
 
-*/
+void mirror_image_gpu(unsigned char* rgb, int width, int height) {
+    dim3 blockSize(16, 16);  
+    dim3 gridSize(
+      (width + blockSize.x - 1) / blockSize.x,   
+      (height + blockSize.y - 1) / blockSize.y   
+    );
+
+    cudaMemcpy(device_rgb, rgb, width * height * 4, cudaMemcpyHostToDevice);
+
+    mirror_image_kernel<<<gridSize, blockSize>>>(device_rgb, device_mirrored_rgb, width, height);
+
+    cudaMemcpy(rgb, device_mirrored_rgb, width * height * 4, cudaMemcpyDeviceToHost);
+}

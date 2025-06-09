@@ -7,6 +7,7 @@ extern "C" {
 #include "image_manipulation.cuh"
 #include "wrappers.cuh"
 #include "globals.h"
+#include "rotation.cuh"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -55,7 +56,15 @@ int main(int argc, char** argv)
   camera_init(camera, fps);
   camera_start(camera);
 
-  init_x11(camera->width,camera->height);
+  int rotated_width = camera->width;
+  int rotated_height = camera->height;
+
+  if (ROTATION_ANGLE == 90 || ROTATION_ANGLE == 270) {
+    rotated_width = camera->height;
+    rotated_height = camera->width;
+  }
+
+  init_x11(rotated_width,rotated_height);
   Atom wm_delete_window = XInternAtom(display, "WM_DELETE_WINDOW", False);
 
 
@@ -75,6 +84,8 @@ int main(int argc, char** argv)
   if (EDGE_DET) alloc_Edge(camera);
 
   if (OPTICAL) alloc_Optical(camera);
+
+  if (ROTATION_ANGLE) alloc_Rotation(camera);
 
   cudaMalloc(&device_scaled_rgb, MAX_WIDTH * MAX_HEIGHT * 4);
   cudaMalloc(&device_sharpened_rgb, MAX_WIDTH * MAX_HEIGHT * 4);
@@ -111,25 +122,33 @@ int main(int argc, char** argv)
         apply_optical_flow(rgb, prev_rgb, camera->width, camera->height);
       }
 
-      
-      mirror_image((unsigned char*)rgb, camera->height, camera->width);
+      if (GPU) {
+        mirror_image_gpu((unsigned char*)rgb, camera->width, camera->height);
+      } else {
+        mirror_image((unsigned char*)rgb, camera->height, camera->width);
+      }
+
+      if (ROTATION_ANGLE) {
+        rotate_image((unsigned char*)rgb, camera->width, camera->height, ROTATION_ANGLE);
+      }
+
 
       XGetWindowAttributes(display, window, &attr);
       int window_width = attr.width;
       int window_height = attr.height;
 
-      if (window_width == camera->width && window_height == camera->height) {
-        display_frame((unsigned char*)rgb,camera->width, camera->height);
-        memcpy(prev_rgb, rgb, camera->width * camera->height * 4);
+      if (window_width == rotated_width && window_height == rotated_height) {
+        display_frame((unsigned char*)rgb,rotated_width, rotated_height);
+        memcpy(prev_rgb, rgb, rotated_width * rotated_height * 4);
         free(rgb);
       } else {
 
         char* scaled_image = (char*)malloc(window_height * window_width * 4);
 
         if (BILINEAR) {
-          scale_image_bilinear((unsigned char*)rgb, camera->width, camera->height,(unsigned char*) scaled_image, window_width, window_height);
+          scale_image_bilinear((unsigned char*)rgb, rotated_width, rotated_height,(unsigned char*) scaled_image, window_width, window_height);
         } else {
-          scale_image_cn((unsigned char*)rgb, camera->width, camera->height,(unsigned char*) scaled_image, window_width, window_height);
+          scale_image_cn((unsigned char*)rgb, rotated_width, rotated_height,(unsigned char*) scaled_image, window_width, window_height);
         }
 
         display_frame((unsigned char*)scaled_image, window_width, window_height);
@@ -160,6 +179,8 @@ int main(int argc, char** argv)
   if(EDGE_DET) free_conversion();
 
   if (OPTICAL) free_Optical();
+
+  if (ROTATION_ANGLE) free_Rotation();
 
   cudaFree(device_scaled_rgb);
 

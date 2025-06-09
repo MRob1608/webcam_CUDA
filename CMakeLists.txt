@@ -24,6 +24,7 @@ add_library(cudalib STATIC
     conversion_CUDA.cu
     image_manipulation.cu
     wrappers.cu
+    rotation.cu
 )
 
 set_target_properties(cudalib PROPERTIES

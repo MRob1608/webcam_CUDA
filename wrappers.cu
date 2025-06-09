@@ -197,11 +197,13 @@ void scale_image_bilinear(unsigned char* rgb, int base_width, int base_height,un
 void alloc_conversion(camera_t* camera) {
     cudaMalloc(&device_yuyv, camera->width * camera->height * 2);
     cudaMalloc(&device_rgb, camera->width * camera->height * 4);
+    cudaMalloc(&device_mirrored_rgb, camera->width * camera->height * 4);
 }
 
 void free_conversion(void) {
     cudaFree(device_rgb);
     cudaFree(device_yuyv);
+    cudaFree(device_mirrored_rgb);
 }
 
 void alloc_Edge(camera_t* camera) {
