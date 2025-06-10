@@ -2,11 +2,12 @@
 #include <stdlib.h>
 #include <math.h>
 
-
+//Calulates the index of a pixel in BGRA starting from the coordinates x and y
 __device__ int idx(int x, int y, int width) {
     return 4 * (y * width + x);
 }
 
+//Applies a simple 3x3 blur to the image in grayscale
 __global__ void blur_image(unsigned char* gray, unsigned char* blur, int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -27,6 +28,7 @@ __global__ void blur_image(unsigned char* gray, unsigned char* blur, int width, 
     blur[pixel_idx] = sum;
 }
 
+//Applies Gaussian blur to the image in grayscale
 __global__ void gaussian_blur3(unsigned char* gray, unsigned char* blur, int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -36,7 +38,7 @@ __global__ void gaussian_blur3(unsigned char* gray, unsigned char* blur, int wid
 
     int pixel_idx = y * width + x;
 
-    const int blr[3][3] = {
+    const int blr[3][3] = {  //Gaussian blur matrix
         {1, 2, 1},
         {2, 4, 2},
         {1, 2, 1}
@@ -62,7 +64,7 @@ __global__ void gaussian_blur3(unsigned char* gray, unsigned char* blur, int wid
 
 }
 
-
+//Convert a BGRA image into a grayscale image (values from 0 to 255)
 __global__ void gray_scale_conversion(unsigned char* rgb, unsigned char* gray, int width, int height) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -74,7 +76,7 @@ __global__ void gray_scale_conversion(unsigned char* rgb, unsigned char* gray, i
 
 }
 
-
+//Applies edge detection to the image using two matrix for vertical and horizontal edges
 __global__ void edge_detection_overlay(unsigned char* rgb, unsigned char* output, unsigned char* grayscale, int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -115,7 +117,7 @@ __global__ void edge_detection_overlay(unsigned char* rgb, unsigned char* output
     if (magnitude > thold) {
         output[pixel_idx] = rgb[pixel_idx];
         output[pixel_idx + 1] = rgb[pixel_idx+1];
-        output[pixel_idx + 2] = 255;
+        output[pixel_idx + 2] = 255;  //Setting the color of the pixel to red if is detected as an edge
         output[pixel_idx + 3] = 0;
     } else {
         output[pixel_idx]     = rgb[pixel_idx];
@@ -125,6 +127,7 @@ __global__ void edge_detection_overlay(unsigned char* rgb, unsigned char* output
     }
 }
 
+//Create a green square given its center coordinates and size
 void draw_square(
     unsigned char* image,
     int width, int height,
@@ -147,7 +150,7 @@ void draw_square(
     }
 }
 
-
+//Calculates three values for each pixel consisting in the x_derivative, y_derivetive and time derivative
 __global__ void compute_derivatives(
     const unsigned char* prev_gray,
     const unsigned char* curr_gray,
@@ -167,22 +170,22 @@ __global__ void compute_derivatives(
     int idx_top    = (y - 1) * width + x;
     int idx_bottom = (y + 1) * width + x;
 
-    // Calcola le medie tra prev e curr
-    float avg_center  = 0.5f * (curr_gray[idx] + prev_gray[idx]);
+    // Averages between curr and prev
+    //float avg_center  = 0.5f * (curr_gray[idx] + prev_gray[idx]);
     float avg_left    = 0.5f * (curr_gray[idx_left] + prev_gray[idx_left]);
     float avg_right   = 0.5f * (curr_gray[idx_right] + prev_gray[idx_right]);
     float avg_top     = 0.5f * (curr_gray[idx_top] + prev_gray[idx_top]);
     float avg_bottom  = 0.5f * (curr_gray[idx_bottom] + prev_gray[idx_bottom]);
 
-    // Derivate spaziali (centrali)
+    // Central spacial derivatives
     Ix[idx] = (avg_right - avg_left) * 0.5f;
     Iy[idx] = (avg_bottom - avg_top) * 0.5f;
 
-    // Derivata temporale
+    // Time derivative
     It[idx] = (float)(curr_gray[idx]) - (float)(prev_gray[idx]);
 }
 
-
+//Kernel for smoothing the flow, calculating the u_avg,v_avg for a pixel starting from its neighbors
 __global__ void average_uv(
     const float* u_in, const float* v_in,
     float* u_avg, float* v_avg,
@@ -205,7 +208,7 @@ __global__ void average_uv(
     v_avg[idx] = 0.25f * (v_in[idx_left] + v_in[idx_right] + v_in[idx_top] + v_in[idx_bottom]);
 }
 
-
+//Updates the u, v values using the derivatives Ix, Iy, Iz and the averages previosly calculated
 __global__ void update_uv(
     const float* Ix, const float* Iy, const float* It,
     const float* u_avg, const float* v_avg,
@@ -238,6 +241,7 @@ __global__ void update_uv(
     }
 }
 
+//Calculates the magnitude of the flow for every pixel
 __global__ void compute_flow_magnitude(const float* u, const float* v, float* mag, int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -254,7 +258,7 @@ __global__ void compute_flow_magnitude(const float* u, const float* v, float* ma
     mag[idx] = tmp_mag;
 }
 
-
+//Scales the image dinamically using the closest neighbor technique
 __global__ void scale_image_cn_kernel(
     const unsigned char* input,
     int src_width, int src_height,
@@ -278,6 +282,7 @@ __global__ void scale_image_cn_kernel(
     output[dst_idx + 3] = input[src_idx + 3];  // A
 }
 
+// Scales the image dinamically using the bilinear tecnique
 __global__ void scale_image_bilinear_kernel(
     unsigned char* input, unsigned char* output,
     int in_width, int in_height,
@@ -324,7 +329,7 @@ __global__ void scale_image_bilinear_kernel(
     }
 }
 
-
+//Applies a sharpening filter to the image (used to prevent unwanted blur using bilinear scaling)
 __global__ void image_sharpen(unsigned char* input, unsigned char* output, int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;

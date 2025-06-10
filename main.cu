@@ -64,12 +64,12 @@ int main(int argc, char** argv)
     rotated_height = camera->width;
   }
 
-  init_x11(rotated_width,rotated_height);
-  Atom wm_delete_window = XInternAtom(display, "WM_DELETE_WINDOW", False);
+  init_x11(rotated_width,rotated_height);  //Creating the window
+  Atom wm_delete_window = XInternAtom(display, "WM_DELETE_WINDOW", False);  //Setting response to closing
 
 
   struct timespec start_time, end_time;
-  clock_gettime(CLOCK_MONOTONIC, &start_time);
+  clock_gettime(CLOCK_MONOTONIC, &start_time);  //Staring a timer
 
   struct timeval timeout;
   timeout.tv_sec = 0;
@@ -77,9 +77,9 @@ int main(int argc, char** argv)
   char image_name[1024];
 
 
-  char* prev_rgb =  (char*)malloc(camera->width * camera->height * 4);
+  char* prev_rgb =  (char*)malloc(camera->width * camera->height * 4);  
 
-  if(GPU) alloc_conversion(camera);
+  if(GPU) alloc_conversion(camera);  //Wrapper for the allocation of all the global variables needed in the procedures
   
   if (EDGE_DET) alloc_Edge(camera);
 
@@ -87,13 +87,14 @@ int main(int argc, char** argv)
 
   if (ROTATION_ANGLE) alloc_Rotation(camera);
 
-  cudaMalloc(&device_scaled_rgb, MAX_WIDTH * MAX_HEIGHT * 4);
+  cudaMalloc(&device_scaled_rgb, MAX_WIDTH * MAX_HEIGHT * 4);  
   cudaMalloc(&device_sharpened_rgb, MAX_WIDTH * MAX_HEIGHT * 4);
   
   int i = 0;
 
   while(1) {
     
+    //Processing all the events on the window and exiting the loop in case of closed window
     while (XPending(display)) {
         XNextEvent(display, &event);
         if (event.type == ClientMessage) {
@@ -111,7 +112,7 @@ int main(int argc, char** argv)
       fflush(stdout);
       char* rgb =  (char*)malloc(camera->width * camera->height * 4);
       
-      convert_yuyv_to_bgra(camera,rgb, GPU);
+      convert_yuyv_to_bgra(camera,rgb, GPU);  //Converting the image to BGRA
 
 
       if (EDGE_DET) {
@@ -132,18 +133,19 @@ int main(int argc, char** argv)
         rotate_image((unsigned char*)rgb, camera->width, camera->height, ROTATION_ANGLE);
       }
 
-
+      //Getting the actual size of the window
       XGetWindowAttributes(display, window, &attr);
       int window_width = attr.width;
       int window_height = attr.height;
 
       if (window_width == rotated_width && window_height == rotated_height) {
+        //Window never chenged size
         display_frame((unsigned char*)rgb,rotated_width, rotated_height);
         memcpy(prev_rgb, rgb, rotated_width * rotated_height * 4);
         free(rgb);
       } else {
 
-        char* scaled_image = (char*)malloc(window_height * window_width * 4);
+        char* scaled_image = (char*)malloc(window_height * window_width * 4);  //Allocating a buffer for the scaled image
 
         if (BILINEAR) {
           scale_image_bilinear((unsigned char*)rgb, rotated_width, rotated_height,(unsigned char*) scaled_image, window_width, window_height);
@@ -174,7 +176,7 @@ int main(int argc, char** argv)
   printf("done!\n");
   camera_frame(camera, timeout);
 
-  if (GPU) free_conversion();
+  if (GPU) free_conversion();  //Wrappers to free all the used variables
   
   if(EDGE_DET) free_conversion();
 
@@ -183,6 +185,7 @@ int main(int argc, char** argv)
   if (ROTATION_ANGLE) free_Rotation();
 
   cudaFree(device_scaled_rgb);
+  cudaFree(device_sharpened_rgb);
 
   free(prev_rgb);
   printf("closing\n");

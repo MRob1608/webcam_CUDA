@@ -2,11 +2,6 @@
 //https://gist.github.com/bellbind/6813905
 //copyright: him
 
-/*
- * capturing from UVC cam
- */
-
-
 
 #include "capture_camera.h"
 
@@ -64,6 +59,8 @@ camera_t* camera_open(const char * device)
   return camera;
 }
 
+// Get all the supported resolution and framerate combination and lets the user choose the one to use
+
 int select_camera_format(camera_t* camera) {
     struct v4l2_fmtdesc fmt = {0};
     fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -77,7 +74,7 @@ int select_camera_format(camera_t* camera) {
         int fps;
     } options[100]; 
 
-    printf("Formati supportati dalla webcam (solo YUYV):\n");
+    printf("Format supported by the webcam (only YUYV):\n");
 
     while (ioctl(camera->fd, VIDIOC_ENUM_FMT, &fmt) == 0) {
         if (fmt.pixelformat == V4L2_PIX_FMT_YUYV) {
@@ -113,15 +110,15 @@ int select_camera_format(camera_t* camera) {
     }
 
     if (option_count == 0) {
-        fprintf(stderr, "Nessun formato YUYV disponibile.\n");
+        fprintf(stderr, "No format available.\n");
         return -1;
     }
 
-    printf("Seleziona il formato desiderato (0-%d): ", option_count - 1);
+    printf("Select the desired format (0-%d): ", option_count - 1);
     scanf("%d", &selected_index);
 
     if (selected_index < 0 || selected_index >= option_count) {
-        fprintf(stderr, "Indice non valido.\n");
+        fprintf(stderr, "Invalid index.\n");
         return -1;
     }
 
@@ -160,7 +157,7 @@ void camera_init(camera_t* camera, int fps) {
   printf("camera supports cropping\n");
 
 
-  //imposto il format
+  //set the format
   struct v4l2_format format;
   memset(&format, 0, sizeof format);
   format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -171,7 +168,7 @@ void camera_init(camera_t* camera, int fps) {
   if (xioctl(camera->fd, VIDIOC_S_FMT, &format) == -1) quit("VIDIOC_S_FMT");
   printf("set format to %d x %d\n", camera->width, camera->height);
 
-  //imposto il framerate
+  //set the framerate
   struct v4l2_streamparm parm;
   memset(&parm, 0, sizeof(parm));
   parm.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -188,7 +185,7 @@ void camera_init(camera_t* camera, int fps) {
        parm.parm.capture.timeperframe.numerator);
 
 
-  //alloco buffer in memoria kernel
+  //Allocate buffer in kernel memory
   struct v4l2_requestbuffers req;
   memset(&req, 0, sizeof req);
   req.count = 4;

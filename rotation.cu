@@ -4,7 +4,7 @@
 #include "capture_camera.h"
 #include <math.h>
 
-
+//Rotate the image 90 degrees clockwise
 __global__ void rotate_90(unsigned char* input, unsigned char* output, int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -20,6 +20,7 @@ __global__ void rotate_90(unsigned char* input, unsigned char* output, int width
     }
 }
 
+//Rotate the image 180 degrees clockwise
 __global__ void rotate_180(unsigned char* input, unsigned char* output, int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -35,7 +36,7 @@ __global__ void rotate_180(unsigned char* input, unsigned char* output, int widt
     }
 }
 
-
+//Rotate the image 270 degrees clockwise
 __global__ void rotate_270(unsigned char* input, unsigned char* output, int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -51,6 +52,7 @@ __global__ void rotate_270(unsigned char* input, unsigned char* output, int widt
     }
 }
 
+//Wrapper that calls the right kernel for the rotation asked
 void rotate_image(unsigned char* rgb, int width, int height, int degrees) {
     dim3 block(16, 16);
     dim3 grid((width + 15) / 16, (height + 15) / 16);
@@ -73,7 +75,7 @@ void rotate_image(unsigned char* rgb, int width, int height, int degrees) {
     cudaMemcpy((unsigned char*)rgb, device_rotated_rgb, width * height *4, cudaMemcpyDeviceToHost);
 }
 
-
+//Wrapper to allocate all the variables needed to perform the roation
 void alloc_Rotation(camera_t* camera) {
     if (!GPU) {
       cudaMalloc(&device_rgb, camera->width * camera->height * 4);
@@ -81,6 +83,7 @@ void alloc_Rotation(camera_t* camera) {
     cudaMalloc(&device_rotated_rgb, camera->width * camera->height * 4);
 }
 
+//Wrapper to free all the variables needed to perform the roation
 void free_Rotation(void) {
     if (!GPU) {
       cudaFree(device_rgb);

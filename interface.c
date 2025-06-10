@@ -11,6 +11,7 @@ Window window;
 GC gc;
 XImage *ximage;
 
+//Creates a simple window with the dimension given and set the window to be responsive to closing
 void init_x11(int width, int height) {
     display = XOpenDisplay(NULL);
     int screen = DefaultScreen(display);
@@ -33,9 +34,10 @@ void init_x11(int width, int height) {
     XFlush(display);
 }
 
+//Displays an image on the windows previously created
 void display_frame(unsigned char* rgb_data, int width, int height) {
     int bytes_per_pixel = 4;
-    int bytes_per_line = width * bytes_per_pixel; // allineato a 4 byte
+    int bytes_per_line = width * bytes_per_pixel; // 4 bytes alignment
     if (ximage) {
         XDestroyImage(ximage); // importante: evita memory leak
     }
@@ -54,7 +56,7 @@ void display_frame(unsigned char* rgb_data, int width, int height) {
                           width,
                           height,
                           8,                  // bitmap_pad in bit
-                          bytes_per_line);    // bytes per line, esplicito!
+                          bytes_per_line);    
     if (!ximage) {
         fprintf(stderr, "XCreateImage failed! width=%d height=%d depth=%d bytes_per_line=%d\n",
                 width, height, depth, bytes_per_line);

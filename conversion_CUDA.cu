@@ -3,8 +3,7 @@
 #include "conversion_CUDA.cuh"
 #include "globals.h"
 
-
-
+// Kernel to convert an image from YUYV format to BGRA
 __global__ void yuyv_to_bgr_CUDA(unsigned char *yuyv, unsigned char *rgb, int height, int width)
 {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -70,8 +69,7 @@ __global__ void yuyv_to_bgr_CUDA(unsigned char *yuyv, unsigned char *rgb, int he
     rgb[8*tid + 7] = (unsigned char)0;
 }
 
-
-
+//Kernel to mirror the image
 __global__ void mirror_image_kernel(unsigned char* rgb, unsigned char* mirrored_rgb, int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -79,7 +77,7 @@ __global__ void mirror_image_kernel(unsigned char* rgb, unsigned char* mirrored_
     if (x >= width || y >= height) return;
 
     int src_idx = ((width * y) + x) * 4;
-    int dest_idx = ((width * y) + width - x - 1) * 4;
+    int dest_idx = ((width * y) + width - x - 1) * 4;   //position of the new pixel
 
 
     mirrored_rgb[dest_idx] = rgb[src_idx];
@@ -88,12 +86,12 @@ __global__ void mirror_image_kernel(unsigned char* rgb, unsigned char* mirrored_
     mirrored_rgb[dest_idx+3] = rgb[src_idx+3];
 }
 
-
+//Wrapper for the mirroring kernel
 void mirror_image_gpu(unsigned char* rgb, int width, int height) {
     dim3 blockSize(16, 16);  
     dim3 gridSize(
-      (width + blockSize.x - 1) / blockSize.x,   
-      (height + blockSize.y - 1) / blockSize.y   
+      (width + blockSize.x - 1) / blockSize.x,   //ceil of width / blocksize
+      (height + blockSize.y - 1) / blockSize.y   //ceil of height / blocksize
     );
 
     cudaMemcpy(device_rgb, rgb, width * height * 4, cudaMemcpyHostToDevice);

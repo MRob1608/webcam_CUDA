@@ -2,28 +2,28 @@
 #include <stdlib.h>
 #include "conversion.h"
 
-
+//Swap two pointers
 void swap(unsigned char* a, unsigned char * b) {
     unsigned char tmp = *b;
     *b = *a;
     *a = tmp;
 }
 
+//Mirror the image
 void mirror_image(unsigned char* rgb, int height, int width) {
     int bytes_per_line = width * 4;
     for ( int i = 0; i < height; i++) {
         int idx = i * bytes_per_line;
         for (int j = 0; j < width*2; j+= 4) {
-            swap((unsigned char *)&rgb[idx+j], (unsigned char *)&rgb[idx+bytes_per_line-4-j]);
-            swap((unsigned char *)&rgb[idx+j+1], (unsigned char *)&rgb[idx+bytes_per_line-3-j]);
-            swap((unsigned char *)&rgb[idx+j+2], (unsigned char *)&rgb[idx+bytes_per_line-2-j]);
-            swap((unsigned char *)&rgb[idx+j+3], (unsigned char *)&rgb[idx+bytes_per_line-1-j]);
+            swap((unsigned char *)&rgb[idx+j], (unsigned char *)&rgb[idx+bytes_per_line-4-j]);   //swap B
+            swap((unsigned char *)&rgb[idx+j+1], (unsigned char *)&rgb[idx+bytes_per_line-3-j]); //swap G
+            swap((unsigned char *)&rgb[idx+j+2], (unsigned char *)&rgb[idx+bytes_per_line-2-j]); //swap R
+            swap((unsigned char *)&rgb[idx+j+3], (unsigned char *)&rgb[idx+bytes_per_line-1-j]); //swap A
         }
     }
 }
 
-
-
+// Converts two pixels from YUYV format to BGRA
 void yuyv_to_bgr_pixel(unsigned char *yuyv, unsigned char *rgb)
 {
     int y, v, u;
@@ -83,19 +83,18 @@ void yuyv_to_bgr_pixel(unsigned char *yuyv, unsigned char *rgb)
     rgb[7] = (unsigned char)0;
 }
 
-
+//Converts the image from YUYV to BGRA
 int yuyv_to_bgr(unsigned char *yuyv, unsigned char *rgb, int height, int width)
 {
     unsigned char temp = 0;
-    long yuv_size = height * width * 2;
+    long yuyv_size = height * width * 2;
     long rgb_size = height * width * 4;
 
     if (yuyv == NULL || rgb == NULL)
 	return 0;
 
-    for (int i = 0, j = 0; i < rgb_size && j < yuv_size; i += 8, j += 4)
-    {
-	yuyv_to_bgr_pixel(&yuyv[j], &rgb[i]);
+    for (int i = 0, j = 0; i < rgb_size && j < yuyv_size; i += 8, j += 4) {
+	    yuyv_to_bgr_pixel(&yuyv[j], &rgb[i]);
     }
     return 1;
 }
